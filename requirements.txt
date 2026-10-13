@@ -1,0 +1,13 @@
+pandas
+numpy
+scipy
+scikit-learn
+requests
+plotly
+openpyxl
+pyspellchecker
+playwright==1.62.0
+transformers
+sentence-transformers
+torch
+ipython
