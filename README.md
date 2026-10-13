@@ -72,3 +72,7 @@ Le notebook est généré à partir de `src/authenticite_avis.py` (cellules au f
 ```bash
 python3 outils/construire_notebook.py
 ```
+
+## Licence
+
+MIT, voir [LICENSE](LICENSE).
