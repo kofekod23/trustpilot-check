@@ -595,8 +595,11 @@ MODELE_SENTIMENT_MULTILINGUE = "nlptown/bert-base-multilingual-uncased-sentiment
 def etoiles_attendues(textes: list[str], modele: str) -> list[float]:
     if not textes:
         return []
+    import torch
     from transformers import pipeline
-    classifieur = pipeline("sentiment-analysis", model=modele, truncation=True, max_length=512, top_k=None)
+    # Explicite : les versions 4.x de transformers restent sur le processeur si rien n'est précisé.
+    classifieur = pipeline("sentiment-analysis", model=modele, truncation=True, max_length=512, top_k=None,
+                           device=0 if torch.cuda.is_available() else -1)
     return [round(sum(int(d["label"][0]) * d["score"] for d in s), 2) for s in classifieur(textes, batch_size=16)]
 
 
