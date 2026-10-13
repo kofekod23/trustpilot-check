@@ -37,6 +37,11 @@ Les signaux sont combinés en un indice de vigilance de 0 à 10, dont les poids 
 règlent dans le notebook. Les résultats sont exportés en Excel, et sur Google Drive si l'option
 est cochée.
 
+Le notebook se termine par une conclusion rédigée. Un graphique montre la part des avis sans
+signal d'alerte, sur l'ensemble de la page puis séparément pour les avis négatifs et positifs.
+Le texte indique ensuite ce qui distingue les deux groupes, les indices de coordination (rafales,
+textes recopiés), les avis à relire en priorité et les réserves sur l'analyse.
+
 ## Modèles
 
 `bge-m3` pour les paraphrases, `distilcamembert` (français) et `nlptown` (autres langues) pour
@@ -61,8 +66,8 @@ Trustpilot company URL and it scrapes the reviews and the reviewers' public hist
 each review on authenticity signals: review bursts (Poisson test), throwaway accounts,
 copy-paste and paraphrase detection across authors (TF-IDF, `bge-m3` embeddings), writing style
 and spelling, sentiment versus star rating, competitor promotion, and company names checked
-against the French business registry. It outputs a 0 to 10 suspicion index with reasons, charts
-and an Excel export. The interface and comments are in French; reviews in any language can be
+against the French business registry. It outputs a 0 to 10 suspicion index with reasons, charts,
+a written conclusion and an Excel export. The interface and comments are in French; reviews in any language can be
 analysed.
 
 ## Développement

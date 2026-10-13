@@ -111,8 +111,9 @@ POIDS = {
 }
 # paraphrase_semantique : calibré pour bge-m3 (paraphrases témoins ≥ 0,83, avis distincts ≤ 0,75 sur une page réelle de 53 avis).
 # ecart_sentiment_modele : écart entre la note donnée et la note lue en espérance (1 à 5).
+# relecture : indice à partir duquel la conclusion compte un avis « à relire » (deux signaux moyens, ou un fort et un faible).
 SEUILS = {"jev": 0.7, "recopie_caracteres": 0.6, "paraphrase_semantique": 0.80, "ecart_sentiment_modele": 2.5,
-          "silence_jours": 3 * 365, "rafale_p": 0.05, "meme_jour": 5}
+          "silence_jours": 3 * 365, "rafale_p": 0.05, "meme_jour": 5, "relecture": 2.0}
 
 # %% Collecte des pages Trustpilot
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -856,3 +857,134 @@ print(f"Résultats : {dossier / nom_fichier}")
 if EN_COLAB and not ENREGISTRER_SUR_DRIVE:
     from google.colab import files
     files.download(str(dossier / nom_fichier))
+
+# %% Conclusion
+LIBELLES = {
+    "texte_recopie": "texte recopié d'un autre auteur", "paraphrase_autre_auteur": "paraphrase d'un autre auteur",
+    "style_ia": "style d'IA", "incoherence_note_texte": "note contredite par le texte",
+    "promotion_concurrent": "promotion d'un concurrent", "generique_sans_fait": "texte générique sans fait",
+    "invraisemblance": "récit invraisemblable", "compte_jetable": "compte créé pour l'avis",
+    "dans_une_rafale": "publié dans une rafale", "serie_meme_jour": "auteur en série le même jour",
+    "societe_fermee": "société signataire fermée", "reveil_apres_long_silence": "réveil après un long silence",
+    "nom_generique": "nom générique",
+}
+CATEGORIES = {"sans signal d'alerte": "#2e8b57", "signal isolé": "#f1c40f", "à relire": "#c0392b"}
+
+
+def pct(x: float) -> str:
+    return f"{x * 100:.0f} %"
+
+
+def majuscule(texte: str) -> str:
+    return texte[:1].upper() + texte[1:]
+
+
+def virgule(x: float) -> str:
+    return f"{x:.1f}".replace(".", ",")
+
+
+categorie = pd.Series(np.select([avis.indice_vigilance >= SEUILS["relecture"], avis.indice_vigilance > 0],
+                                ["à relire", "signal isolé"], "sans signal d'alerte"), index=avis.index)
+groupe = avis.negatif.map({True: "négatifs", False: "positifs ou neutres"})
+a_relire = categorie.eq("à relire")
+part_sans_signal = categorie.eq("sans signal d'alerte").mean()
+parts_groupe = {g: a_relire[groupe == g].mean() for g in groupe.unique()}
+
+# Graphique : part globale (anneau) et détail par type d'avis (barres empilées).
+from plotly.subplots import make_subplots
+global_ = categorie.value_counts().reindex(list(CATEGORIES), fill_value=0)
+detail = pd.crosstab(groupe, categorie, normalize="index").reindex(columns=list(CATEGORIES), fill_value=0) * 100
+fig = make_subplots(rows=1, cols=2, column_widths=[0.4, 0.6], specs=[[{"type": "domain"}, {"type": "xy"}]],
+                    subplot_titles=("Ensemble des avis", "Détail par type d'avis"))
+fig.add_trace(go.Pie(labels=global_.index, values=global_.values, hole=0.62, sort=False, direction="clockwise",
+                     marker_colors=list(CATEGORIES.values()), textinfo="percent", showlegend=True), 1, 1)
+for nom, couleur in CATEGORIES.items():
+    fig.add_trace(go.Bar(y=detail.index, x=detail[nom], name=nom, orientation="h", marker_color=couleur,
+                         text=detail[nom].round(0).astype(int).astype(str) + " %", textposition="inside",
+                         showlegend=False), 1, 2)
+fig.update_layout(barmode="stack", title="Part des avis sans signal d'alerte", height=380,
+                  annotations=list(fig.layout.annotations) + [dict(
+                      text=f"<b>{pct(part_sans_signal)}</b><br>sans signal",
+                      x=0.2, y=0.5, xref="paper", yref="paper", showarrow=False, font_size=18)])
+fig.update_xaxes(range=[0, 100], ticksuffix=" %", row=1, col=2)
+fig.show()
+
+# Constats chiffrés.
+lignes = []
+debut, fin = avis.date_publication.min().tz_convert(PARIS), avis.date_publication.max().tz_convert(PARIS)
+total_page = entreprise.get("numberOfReviews")
+lignes.append(f"**Corpus.** {len(avis)} avis de {NOM_ENTREPRISE or 'cette entreprise'} publiés du "
+              f"{debut:%d/%m/%Y} au {fin:%d/%m/%Y}, dont {int(avis.negatif.sum())} négatifs (1 ou 2 étoiles) ; "
+              f"note moyenne {virgule(avis.note.mean())}/5. {len(profils_bruts)} profils d'auteurs lus."
+              + (f" Trustpilot en annonce {total_page} : l'écart vient de la limite de pages ou d'avis non affichés."
+                 if total_page and total_page > len(avis) else ""))
+lignes.append(f"**Résultat global.** {pct(part_sans_signal)} des avis ne présentent aucun "
+              f"signal d'alerte, {pct(global_['signal isolé'] / len(avis))} un signal isolé (souvent anodin) et "
+              f"{pct(a_relire.mean())} assez de signaux pour être relus ({int(a_relire.sum())} avis, indice ≥ "
+              f"{virgule(SEUILS['relecture'])}). Par type : "
+              + ", ".join(f"{pct(p)} des avis {g}" for g, p in parts_groupe.items()) + " sont à relire.")
+
+ecarts = []
+if avis.negatif.any() and (~avis.negatif).any():
+    for s in signaux:
+        pn, pp = signaux[s][avis.negatif].mean(), signaux[s][~avis.negatif].mean()
+        if max(pn, pp) >= 0.10 and abs(pn - pp) >= 0.10:
+            ecarts.append((abs(pn - pp), f"{LIBELLES[s]} ({pct(pn)} des négatifs contre {pct(pp)} des positifs ou neutres)"))
+lignes.append("**Ce qui distingue les deux camps.** " + (majuscule(" ; ".join(t for _, t in sorted(ecarts, reverse=True))) + "."
+              if ecarts else "Aucun signal ne sépare nettement les avis négatifs des autres."))
+
+nb_rafale, nb_serie = int(signaux.dans_une_rafale.sum()), int(signaux.serie_meme_jour.sum())
+nb_copies = int((paires.sim_caracteres >= SEUILS["recopie_caracteres"]).sum()) if len(paires) else 0
+nb_paraphrases = int((paires.sim_sens >= SEUILS["paraphrase_semantique"]).sum()) if len(paires) and sim_sens is not None else 0
+mois_rafale = ""
+if nb_rafale:
+    rafale = avis[signaux.dans_une_rafale]
+    mois = rafale.date_publication.dt.tz_convert(PARIS).dt.strftime("%m/%Y")
+    mois_rafale = " (" + ", ".join(f"{m} : {n} {g}" for (m, g), n in rafale.groupby([mois, groupe[rafale.index]])
+                                   .size().sort_values(ascending=False).head(4).items()) + ")"
+coordination = [t for n, t in [(nb_copies, f"{nb_copies} paire(s) de textes recopiés entre auteurs différents"),
+                               (nb_paraphrases, f"{nb_paraphrases} paire(s) de paraphrases"),
+                               (nb_rafale, f"{nb_rafale} avis publiés dans des rafales{mois_rafale}"),
+                               (nb_serie, f"{nb_serie} avis d'auteurs qui en publient en série le même jour")] if n]
+lignes.append("**Indices de coordination.** " + (majuscule(" ; ".join(coordination)) + "." if coordination else
+              "Aucun : ni rafale anormale, ni texte recopié, ni auteur en série."))
+
+if a_relire.any():
+    tete = avis[a_relire].sort_values("indice_vigilance", ascending=False).head(3)
+    lignes.append("**Avis les plus marqués.** " + " ; ".join(
+        f"{r.date_publication.tz_convert(PARIS):%d/%m/%Y}, note {r.note}/5, indice {virgule(r.indice_vigilance)} : "
+        + ", ".join(LIBELLES[k] for k in r.raisons.split(", ") if k) for r in tete.itertuples()) + ".")
+
+reserves = []
+if not profils_bruts:
+    reserves.append("profils des auteurs non lus (séries le même jour et réveils après un long silence non évalués)")
+if not cle:
+    reserves.append("Jev non utilisé (style d'IA, texte générique, invraisemblance et promotion d'un concurrent non évalués)")
+if questions_douteuses:
+    reserves.append(f"témoins Jev en échec sur {', '.join(sorted(questions_douteuses))}")
+if len(avis) < 50:
+    reserves.append("moins de 50 avis : les tests de rafale ne repèrent que des écarts grossiers")
+if reserves:
+    lignes.append("**Réserves.** " + majuscule(" ; ".join(reserves)) + ".")
+
+# Verdict : prudent par construction, il décrit un schéma sans conclure à la fraude.
+ecart_camps = max(parts_groupe.values()) - min(parts_groupe.values()) if len(parts_groupe) == 2 else 0
+camp = max(parts_groupe, key=parts_groupe.get)
+if a_relire.mean() < 0.05 and not coordination:
+    verdict = ("Rien n'indique une manipulation organisée : les signaux relevés restent isolés, presque aucun avis "
+               "n'en cumule plusieurs et aucun indice de coordination n'apparaît. Les avis paraissent dans leur "
+               "ensemble spontanés.")
+elif ecart_camps >= 0.15 and coordination:
+    verdict = (f"Les signaux se concentrent sur les avis {camp} et s'accompagnent d'indices de coordination. Ce "
+               "schéma est compatible avec une campagne ciblée, sans la prouver : relire les avis listés plus haut "
+               "avant toute conclusion.")
+elif ecart_camps >= 0.15:
+    verdict = (f"Les avis {camp} portent nettement plus de signaux que les autres, mais sans indice de coordination : "
+               "cela évoque des comptes isolés plutôt qu'une campagne.")
+else:
+    verdict = ("Des signaux existent mais se répartissent de façon comparable entre avis positifs et négatifs"
+               + (", avec quelques indices de coordination à vérifier" if coordination else "")
+               + " : rien ne désigne un camp en particulier.")
+lignes.append(f"**En résumé.** {verdict} Un signal n'est pas une preuve : chacun a une explication innocente "
+              "possible, et la décision revient à la relecture humaine.")
+display(Markdown("## Conclusion\n\n" + "\n\n".join(lignes)))
