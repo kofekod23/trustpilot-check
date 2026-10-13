@@ -1,8 +1,13 @@
-# trustpilot-check
+# trustpilot-check : détecter les faux avis Trustpilot
 
-Notebook Colab qui évalue l'authenticité des avis d'une page Trustpilot. À partir de l'URL, il
-collecte les avis et l'historique public de leurs auteurs, cherche les signaux d'avis fabriqués
-et classe les avis à relire en priorité, avec ses raisons pour chacun.
+[![Ouvrir dans Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kofekod23/trustpilot-check/blob/main/authenticite_avis.ipynb)
+
+Notebook Google Colab qui vérifie l'authenticité des avis d'une page Trustpilot. À partir de
+l'URL, il collecte les avis et l'historique public de leurs auteurs, cherche les signes de faux
+avis (positifs comme négatifs) et classe les avis à relire en priorité, avec ses raisons pour
+chacun : rafales d'avis, comptes créés pour l'occasion, textes recopiés ou paraphrasés, style
+d'écriture, fautes d'orthographe, sentiment contradictoire avec la note, société signataire
+fermée au registre.
 
 Un signal n'est pas une preuve : un client furieux crée souvent son compte le jour où il écrit.
 La décision reste humaine. Les mêmes contrôles portent sur les avis positifs et négatifs, ce qui
@@ -10,7 +15,7 @@ permet de les comparer.
 
 ## Utilisation
 
-1. Ouvrir `authenticite_avis.ipynb` dans Google Colab.
+1. Ouvrir le notebook avec le bouton « Open in Colab » ci-dessus.
 2. Facultatif : ajouter la clé `TYPESAFE_API_KEY` dans les secrets Colab pour les jugements de
    Jev. Sans clé, le reste fonctionne.
 3. Saisir l'URL Trustpilot dans « Paramètres », puis Exécution > Tout exécuter.
@@ -48,6 +53,17 @@ pages.
 - Sur une page qui compte peu d'avis, les tests statistiques ne repèrent que des anomalies
   grossières.
 - Playwright est épinglé en version 1.62.0 : la 1.63 plante sur les pages Trustpilot.
+
+## In English
+
+**trustpilot-check** is a Google Colab notebook for fake review detection on Trustpilot. Paste a
+Trustpilot company URL and it scrapes the reviews and the reviewers' public history, then scores
+each review on authenticity signals: review bursts (Poisson test), throwaway accounts,
+copy-paste and paraphrase detection across authors (TF-IDF, `bge-m3` embeddings), writing style
+and spelling, sentiment versus star rating, competitor promotion, and company names checked
+against the French business registry. It outputs a 0 to 10 suspicion index with reasons, charts
+and an Excel export. The interface and comments are in French; reviews in any language can be
+analysed.
 
 ## Développement
 
